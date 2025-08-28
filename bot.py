@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 import uvicorn
 
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import KeyboardButton
+from aiogram.types import KeyboardButton, ReplyKeyboardRemove
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -34,6 +34,7 @@ RESULT_COLUMNS = ["Номер в 1С", "Маркировка", "Документ
 
 class FilterState(StatesGroup):
     step = State()
+    finished = State()
 
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
@@ -71,7 +72,7 @@ def format_results(dataframe, limit=30):
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     await state.set_state(FilterState.step)
-    await state.update_data(step_index=0, filters={}, current_df=df.copy())
+    await state.update_data(step_index=0, filters={}, current_df=df.copy(), finished=False)
 
     column = FILTER_COLUMNS[0]
     options = get_unique_options(column, df)
@@ -90,8 +91,11 @@ async def handle_restart_button(message: types.Message, state: FSMContext):
 
 @dp.message(FilterState.step)
 async def handle_step(message: types.Message, state: FSMContext):
-    msg_text = message.text.strip()
     data = await state.get_data()
+    if data.get("finished"):
+        return
+
+    msg_text = message.text.strip()
     step_index = data.get("step_index", 0)
     filters = data.get("filters", {})
     current_df = data.get("current_df", df.copy())
@@ -126,22 +130,26 @@ async def handle_step(message: types.Message, state: FSMContext):
         return
 
     filters[current_column] = msg_text
-    filtered_df = current_df[current_column].astype(str).str.strip() == msg_text
     filtered_df = current_df[current_df[current_column].astype(str).str.strip() == msg_text]
 
     if filtered_df.empty:
-        await message.answer("❌ 0 штук. /start")
+        await message.answer("❌ 0 штук. /start", reply_markup=ReplyKeyboardRemove())
         await state.clear()
         return
 
     if len(filtered_df) == 1:
         result_text = format_results(filtered_df)
-        await message.answer(f"✅ Найден 1 вариант:\n\n{result_text}", reply_markup=create_keyboard([], final=True))
+        await message.answer(
+            f"✅ Найден 1 вариант:\n\n{result_text}",
+            reply_markup=ReplyKeyboardRemove()
+        )
         file_path = "filtered_results.xlsx"
         final_df = filtered_df[df_raw.columns]
         final_df.to_excel(file_path, index=False)
         await message.answer_document(types.FSInputFile(file_path))
         os.remove(file_path)
+
+        await state.update_data(finished=True)
         await state.clear()
         return
 
@@ -151,12 +159,17 @@ async def handle_step(message: types.Message, state: FSMContext):
 
     step_index += 1
     if step_index >= len(FILTER_COLUMNS):
-        await message.answer("🎉 Фильтрация завершена.")
+        await message.answer(
+            "🎉 Фильтрация завершена.",
+            reply_markup=ReplyKeyboardRemove()
+        )
         file_path = "filtered_results.xlsx"
         final_df = filtered_df[df_raw.columns]
         final_df.to_excel(file_path, index=False)
         await message.answer_document(types.FSInputFile(file_path))
         os.remove(file_path)
+
+        await state.update_data(finished=True)
         await state.clear()
         return
 
