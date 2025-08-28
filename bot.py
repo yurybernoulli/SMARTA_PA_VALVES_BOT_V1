@@ -91,10 +91,6 @@ async def handle_restart_button(message: types.Message, state: FSMContext):
 
 @dp.message(FilterState.step)
 async def handle_step(message: types.Message, state: FSMContext):
-    # если уже завершили фильтрацию — игнорируем
-    if await state.get_state() == FilterState.finished:
-        return
-
     msg_text = message.text.strip()
     data = await state.get_data()
     step_index = data.get("step_index", 0)
@@ -179,6 +175,11 @@ async def handle_step(message: types.Message, state: FSMContext):
         f"Выберите: «<b>{next_column}</b>»",
         reply_markup=create_keyboard(next_options, step_index=step_index)
     )
+
+# === Игнор сообщений после завершения ===
+@dp.message(FilterState.finished)
+async def ignore_after_finish(message: types.Message, state: FSMContext):
+    return
 
 # === FastAPI для Render ===
 app = FastAPI()
