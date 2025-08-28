@@ -72,7 +72,7 @@ def format_results(dataframe, limit=30):
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     await state.set_state(FilterState.step)
-    await state.update_data(step_index=0, filters={}, current_df=df.copy())
+    await state.update_data(step_index=0, filters={}, current_df=df.copy(), result_sent=False)
 
     column = FILTER_COLUMNS[0]
     options = get_unique_options(column, df)
@@ -91,8 +91,11 @@ async def handle_restart_button(message: types.Message, state: FSMContext):
 
 @dp.message(FilterState.step)
 async def handle_step(message: types.Message, state: FSMContext):
-    msg_text = message.text.strip()
     data = await state.get_data()
+    if data.get("result_sent"):
+        return  # уже отправляли результат, игнорируем
+
+    msg_text = message.text.strip()
     step_index = data.get("step_index", 0)
     filters = data.get("filters", {})
     current_df = data.get("current_df", df.copy())
@@ -131,6 +134,7 @@ async def handle_step(message: types.Message, state: FSMContext):
 
     if filtered_df.empty:
         await message.answer("❌ 0 штук. /start", reply_markup=ReplyKeyboardRemove())
+        await state.update_data(result_sent=True)
         await state.set_state(FilterState.finished)
         return
 
@@ -146,6 +150,7 @@ async def handle_step(message: types.Message, state: FSMContext):
         await message.answer_document(types.FSInputFile(file_path))
         os.remove(file_path)
 
+        await state.update_data(result_sent=True)
         await state.set_state(FilterState.finished)
         return
 
@@ -155,8 +160,9 @@ async def handle_step(message: types.Message, state: FSMContext):
 
     step_index += 1
     if step_index >= len(FILTER_COLUMNS):
+        result_text = format_results(filtered_df)
         await message.answer(
-            "🎉 Фильтрация завершена.",
+            f"🎉 Фильтрация завершена.\n\n{result_text}",
             reply_markup=ReplyKeyboardRemove()
         )
         file_path = "filtered_results.xlsx"
@@ -165,6 +171,7 @@ async def handle_step(message: types.Message, state: FSMContext):
         await message.answer_document(types.FSInputFile(file_path))
         os.remove(file_path)
 
+        await state.update_data(result_sent=True)
         await state.set_state(FilterState.finished)
         return
 
