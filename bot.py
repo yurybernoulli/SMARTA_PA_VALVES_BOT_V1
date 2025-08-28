@@ -191,6 +191,9 @@ async def ignore_after_finish(message: types.Message, state: FSMContext):
 # === FastAPI для Render ===
 app = FastAPI()
 
+# Глобальный сет для защиты от дублей update_id
+processed_updates = set()
+
 @app.get("/")
 async def root():
     return {"status": "бот работает"}
@@ -199,6 +202,12 @@ async def root():
 async def webhook(request: Request):
     data = await request.json()
     update = types.Update(**data)
+
+    # защита от дублей update_id
+    if update.update_id in processed_updates:
+        return {"ok": True}
+    processed_updates.add(update.update_id)
+
     await dp.feed_update(bot, update)
     return {"ok": True}
 
