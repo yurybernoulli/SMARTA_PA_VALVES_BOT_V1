@@ -72,7 +72,7 @@ def format_results(dataframe, limit=30):
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     await state.set_state(FilterState.step)
-    await state.update_data(step_index=0, filters={}, current_df=df.copy(), finished=False)
+    await state.update_data(step_index=0, filters={}, current_df=df.copy())
 
     column = FILTER_COLUMNS[0]
     options = get_unique_options(column, df)
@@ -91,11 +91,12 @@ async def handle_restart_button(message: types.Message, state: FSMContext):
 
 @dp.message(FilterState.step)
 async def handle_step(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    if data.get("finished"):
+    # если уже завершили фильтрацию — игнорируем
+    if await state.get_state() == FilterState.finished:
         return
 
     msg_text = message.text.strip()
+    data = await state.get_data()
     step_index = data.get("step_index", 0)
     filters = data.get("filters", {})
     current_df = data.get("current_df", df.copy())
@@ -134,7 +135,7 @@ async def handle_step(message: types.Message, state: FSMContext):
 
     if filtered_df.empty:
         await message.answer("❌ 0 штук. /start", reply_markup=ReplyKeyboardRemove())
-        await state.clear()
+        await state.set_state(FilterState.finished)
         return
 
     if len(filtered_df) == 1:
@@ -149,8 +150,7 @@ async def handle_step(message: types.Message, state: FSMContext):
         await message.answer_document(types.FSInputFile(file_path))
         os.remove(file_path)
 
-        await state.update_data(finished=True)
-        await state.clear()
+        await state.set_state(FilterState.finished)
         return
 
     if len(filtered_df) <= 20:
@@ -169,8 +169,7 @@ async def handle_step(message: types.Message, state: FSMContext):
         await message.answer_document(types.FSInputFile(file_path))
         os.remove(file_path)
 
-        await state.update_data(finished=True)
-        await state.clear()
+        await state.set_state(FilterState.finished)
         return
 
     next_column = FILTER_COLUMNS[step_index]
