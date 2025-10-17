@@ -191,12 +191,16 @@ async def ignore_after_finish(message: types.Message, state: FSMContext):
 # === FastAPI для Render ===
 app = FastAPI()
 
+processed_updates.add(update.update_id)
+
+    await dp.feed_update(bot, update)
+    return {"ok": True}
+
+
+from asyncio import create_task
+
 # Глобальный сет для защиты от дублей update_id
 processed_updates = set()
-
-@app.get("/")
-async def root():
-    return {"status": "бот работает"}
 
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -208,7 +212,8 @@ async def webhook(request: Request):
         return {"ok": True}
     processed_updates.add(update.update_id)
 
-    await dp.feed_update(bot, update)
+    # Асинхронная обработка — Telegram получает ответ мгновенно
+    create_task(dp.feed_update(bot, update))
     return {"ok": True}
 
 if __name__ == "__main__":
